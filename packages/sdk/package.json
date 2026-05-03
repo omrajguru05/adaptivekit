@@ -1,0 +1,42 @@
+{
+  "name": "@adaptivekit/sdk",
+  "version": "1.0.0",
+  "description": "Browser SDK for AdaptiveKit. Tracks engagement on data-ak-id elements and emits events.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "size": "du -h dist/index.js dist/index.cjs"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.5",
+    "rimraf": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "personalization",
+    "tracking",
+    "intersection-observer",
+    "adaptive"
+  ]
+}
