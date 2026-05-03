@@ -1,6 +1,6 @@
 {
   "name": "@adaptivekit/cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI for AdaptiveKit. Injects data-ak-id attributes and generates the block manifest.",
   "license": "MIT",
   "type": "module",
@@ -8,7 +8,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "adaptivekit": "./dist/cli.cjs"
+    "adaptivekit": "dist/cli.cjs"
   },
   "exports": {
     ".": {
