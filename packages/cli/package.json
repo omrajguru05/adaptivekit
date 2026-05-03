@@ -21,6 +21,18 @@
     "dist",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/omrajguru05/adaptivekit",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/omrajguru05/adaptivekit#readme",
+  "bugs": {
+    "url": "https://github.com/omrajguru05/adaptivekit/issues"
+  },
   "scripts": {
     "build": "tsup",
     "clean": "rimraf dist",
