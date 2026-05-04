@@ -10,9 +10,9 @@ Version 1.0. The three packages build, the test suite passes, and the SDK ships 
 
 | Package | Version | Build size | Purpose |
 |---|---|---|---|
-| `@adaptivekit/cli` | 1.0.0 | n/a | One-time codemod that injects tracking IDs into JSX |
-| `@adaptivekit/sdk` | 1.0.0 | 3.04 KB min | Browser tracker that emits engagement events |
-| `@adaptivekit/core` | 1.0.0 | 4.29 KB min | Scoring engine that ranks blocks per user |
+| [`@adaptivekit/cli`](https://www.npmjs.com/package/@adaptivekit/cli) | 1.0.1 | n/a | One-time codemod that injects tracking IDs into JSX |
+| [`@adaptivekit/sdk`](https://www.npmjs.com/package/@adaptivekit/sdk) | 1.0.0 | 3.04 KB min | Browser tracker that emits engagement events |
+| [`@adaptivekit/core`](https://www.npmjs.com/package/@adaptivekit/core) | 1.0.0 | 4.29 KB min | Scoring engine that ranks blocks per user |
 
 ## What it does, in one paragraph
 
@@ -174,6 +174,235 @@ return (
 ```
 
 For slot-based layouts, I sort the children before rendering. For grid layouts, I use `grid-row`. The ranking is an array of strings, and I do whatever the parent design system allows.
+
+## Recipes
+
+Common patterns I needed when wiring AdaptiveKit into a real app. Each recipe is independent and copy-pasteable.
+
+### A `useAdaptiveLayout` React hook
+
+The roadmap promises this as a first-class export. Until I ship it, here is the implementation I use today:
+
+```tsx
+// src/lib/use-adaptive-layout.ts
+'use client'
+import { useEffect, useState } from 'react'
+
+type Layout = {
+  rankedBlockIds: string[]
+  scores: Record<string, number>
+}
+
+const cache = new Map<string, { layout: Layout; expires: number }>()
+
+export function useAdaptiveLayout(userId: string | null, ttlMs = 30_000) {
+  const [layout, setLayout] = useState<Layout | null>(
+    () => cache.get(userId ?? '')?.layout ?? null,
+  )
+
+  useEffect(() => {
+    if (!userId) return
+    const cached = cache.get(userId)
+    if (cached && cached.expires > Date.now()) {
+      setLayout(cached.layout)
+      return
+    }
+    let cancelled = false
+    fetch(`/api/ak/layout?userId=${encodeURIComponent(userId)}`)
+      .then((r) => r.json())
+      .then((data: Layout) => {
+        if (cancelled) return
+        cache.set(userId, { layout: data, expires: Date.now() + ttlMs })
+        setLayout(data)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [userId, ttlMs])
+
+  return layout
+}
+```
+
+The hook caches the layout in memory for 30 seconds, so navigating between pages does not refetch. Adjust the TTL based on how aggressive I want the personalization to feel.
+
+### Cold start (a brand-new user with zero events)
+
+The engine returns an empty `rankedBlockIds` array for users it has never seen. I treat that as a signal to fall back to a default order:
+
+```ts
+const layout = engine.getLayout(userId)
+const ranking = layout.rankedBlockIds.length > 0
+  ? layout.rankedBlockIds
+  : DEFAULT_RANKING_FOR_NEW_USERS
+```
+
+`DEFAULT_RANKING_FOR_NEW_USERS` is whatever order I would have shipped without AdaptiveKit. The personalization layer activates the moment a user starts engaging.
+
+### Custom React components (Card, Panel, FeatureBlock)
+
+By default, the CLI skips PascalCase components because changing their props can break custom prop validation. To opt them in, I add them to `componentTags`:
+
+```js
+// adaptivekit.config.js
+module.exports = {
+  componentTags: ['Card', 'Panel', 'FeatureBlock'],
+}
+```
+
+The component must forward `data-ak-id` to its root element. Most components do this implicitly via prop spreading. If yours does not, add the forwarding manually:
+
+```tsx
+function Card({ children, ...rest }: CardProps) {
+  return <section {...rest}>{children}</section>
+}
+```
+
+### Excluding a single element from tracking
+
+I delete the `data-ak-id` attribute from any element I want to opt out, and I add a sentinel attribute the CLI recognizes so re-runs do not re-inject:
+
+```tsx
+// This block stays untracked across re-runs
+<section className="legal-footer" data-ak-skip>
+  ...
+</section>
+```
+
+I commit the `data-ak-skip` attribute to source. Any future `generate` skips elements that have it.
+
+### Anonymous users
+
+For users without an account, I generate a stable anonymous ID once and store it in `localStorage`:
+
+```ts
+function getAnonymousId() {
+  let id = localStorage.getItem('ak-anon-id')
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem('ak-anon-id', id)
+  }
+  return id
+}
+
+init({ userId: getAnonymousId(), onEvent })
+```
+
+This works across browser sessions on the same device. It does not survive a `localStorage` clear or cross-device usage. Both are acceptable tradeoffs for anonymous personalization.
+
+### Batching events on the wire
+
+The default `onEvent` callback fires once per event. On busy pages, I batch events in memory and flush every 5 seconds or every 20 events, whichever comes first:
+
+```ts
+import type { AdaptiveKitEvent } from '@adaptivekit/sdk'
+
+const queue: AdaptiveKitEvent[] = []
+let timer: ReturnType<typeof setTimeout> | null = null
+
+function flush() {
+  if (queue.length === 0) return
+  const batch = queue.splice(0)
+  navigator.sendBeacon('/api/ak/event/batch', JSON.stringify(batch))
+}
+
+init({
+  userId,
+  onEvent: (event) => {
+    queue.push(event)
+    if (queue.length >= 20) return flush()
+    if (timer) return
+    timer = setTimeout(() => {
+      timer = null
+      flush()
+    }, 5000)
+  },
+})
+
+window.addEventListener('beforeunload', flush)
+```
+
+`navigator.sendBeacon` is a browser API designed for fire-and-forget telemetry that survives page unload.
+
+### React Server Components and the SDK
+
+The SDK is a client-side library. It must be imported from a `'use client'` file. The recommended setup is a small client wrapper imported into a server layout:
+
+```tsx
+// src/lib/adaptivekit-provider.tsx
+'use client'
+import { init } from '@adaptivekit/sdk'
+import { useEffect } from 'react'
+
+export function AdaptiveKitProvider({ userId }: { userId: string }) {
+  useEffect(() => {
+    init({ userId, onEvent: postEvent })
+  }, [userId])
+  return null
+}
+```
+
+```tsx
+// app/layout.tsx (server component)
+import { AdaptiveKitProvider } from '@/lib/adaptivekit-provider'
+
+export default async function Layout({ children }) {
+  const session = await getSession()
+  return (
+    <html>
+      <body>
+        <AdaptiveKitProvider userId={session.user.id} />
+        {children}
+      </body>
+    </html>
+  )
+}
+```
+
+### GDPR and right-to-be-forgotten
+
+Deleting a user's affinity state is two calls:
+
+```ts
+engine.reset(userId)
+await myStore.delete(`ak:${userId}`)
+```
+
+I wire that into the same code path that deletes the user's account. The events themselves are write-only and are not stored individually, so there is no event log to purge.
+
+### Edge-caching the layout response
+
+The layout endpoint is read-mostly. I cache it in the browser with a short TTL:
+
+```ts
+return new Response(JSON.stringify(layout), {
+  headers: {
+    'content-type': 'application/json',
+    'cache-control': 'private, max-age=30',
+  },
+})
+```
+
+`private` keeps the response in the browser cache only, never on a shared CDN, because the layout is per-user.
+
+### When to re-run `npx adaptivekit generate`
+
+Re-run the CLI in three situations:
+
+1. After adding new components or new container elements that should be tracked.
+2. After renaming a component (the IDs change because the component name is part of the hash).
+3. Never as part of a build pipeline. The manifest commits to git and serves as the source of truth.
+
+### What to commit
+
+| File | Commit? | Why |
+|---|---|---|
+| `adaptivekit.manifest.json` | Yes | Source of truth for which IDs the engine recognizes. |
+| `adaptivekit.config.js` | Yes | Reproducible setup for every contributor. |
+| Source files with injected `data-ak-id` | Yes | The IDs are part of the rendered DOM. |
+| `node_modules/` | No | Standard `.gitignore` rule. |
+| Affinity state (per-user JSON) | No | Lives in my database, not in the repo. |
 
 ## How the three packages fit together
 
@@ -401,6 +630,122 @@ The exported state is a plain JSON object roughly:
 
 I store it as-is. The version field lets me migrate the schema later without breaking existing snapshots.
 
+## Troubleshooting
+
+The most common issues, organized by where they show up.
+
+### CLI errors
+
+**`Parse failed for ...`**
+The file uses syntax `@babel/parser` does not recognize. The CLI enables `jsx`, `typescript`, `classProperties`, `decorators-legacy`, `objectRestSpread`, and `topLevelAwait`. If the file uses an experimental plugin (Vue SFC, Svelte, MDX), exclude it from `include`:
+
+```js
+exclude: ['**/*.vue', '**/*.svelte', '**/*.mdx']
+```
+
+**Manifest is empty after `generate`**
+The CLI scanned files but found nothing to inject. Three usual causes:
+
+1. `minDepth` is higher than the deepest container in my components. Lower it to 0 and re-run.
+2. None of my container elements match `elementTypes`. Check what tags my components actually use and add them to the list.
+3. My components use custom PascalCase wrappers (`<Stack>`, `<Box>`). Add them to `componentTags`.
+
+**`No files matched`**
+The `include` glob does not match my project structure. Run with `--verbose` to see what the CLI scanned. A common adjustment for projects with a non-standard layout:
+
+```js
+include: ['packages/web/src/**/*.{jsx,tsx}']
+```
+
+**Source files reformat themselves after `generate`**
+The CLI does byte-level inserts and does not touch formatting. If files reformat, my editor or pre-commit hook (Prettier, ESLint) is the cause. Run the CLI, then run my formatter, and commit both diffs together.
+
+### SDK errors
+
+**`ReferenceError: window is not defined`**
+The SDK was imported into a server-side file. Move the `init` call into a `'use client'` component or guard the import:
+
+```ts
+if (typeof window !== 'undefined') {
+  import('@adaptivekit/sdk').then(({ init }) => init(options))
+}
+```
+
+**No events arrive at my server**
+Walk through the checklist in order:
+
+1. Open DevTools and confirm the elements have `data-ak-id` attributes.
+2. Set `debug: true` in `init()` and check the console for SDK errors.
+3. Confirm `onEvent` posts to a real route. Test the route directly with `curl`.
+4. Check for content-blockers. uBlock Origin and similar extensions block requests to paths containing `track`, `event`, or `analytics`. Rename the route to `/api/ak/ingest` if I see this.
+
+**Events fire but the layout never changes**
+The events arrive but the engine state is not persisting. Check that `engine.exportState(userId)` writes to my store and `engine.importState(userId, ...)` reads on every request. A common bug is creating a new `AdaptiveEngine` per request without importing the prior state, which throws away every event.
+
+**The same view event fires repeatedly**
+This is correct behavior. Each time a block crosses the visibility threshold, the SDK emits a view event. If I want one view per page session, dedupe inside `onEvent`:
+
+```ts
+const seen = new Set<string>()
+init({
+  userId,
+  onEvent: (event) => {
+    const key = `${event.blockId}:${event.eventType}`
+    if (event.eventType === 'view' && seen.has(key)) return
+    seen.add(key)
+    postEvent(event)
+  },
+})
+```
+
+### Engine errors
+
+**`engine.getLayout(userId)` always returns empty**
+The engine is in-memory only. Every server restart wipes its state. The pattern is to load from storage on every request:
+
+```ts
+const stored = await myStore.get(`ak:${userId}`)
+if (stored) engine.importState(userId, stored)
+```
+
+If `stored` is `null`, the user genuinely has no events yet. See the cold start recipe.
+
+**`Unsupported AffinityState version`**
+I imported a snapshot the engine does not recognize. The engine writes `version: 1` and only accepts `version: 1`. If I see this error, my storage holds a corrupt or hand-edited snapshot.
+
+**Scores grow unboundedly**
+The decay rate `lambda` is too low. Default 0.05 keeps scores bounded for typical usage. If I lowered it, raise it back. Verify by querying `engine.exportState(userId)` and looking at the largest `score` value.
+
+### TypeScript errors
+
+**`Property 'data-ak-id' does not exist on type ...`**
+Custom React components do not extend `HTMLAttributes` by default. Two fixes:
+
+1. Make the component spread props onto the root element: `<div {...props}>`.
+2. Add `[key: \`data-${string}\`]: string` to the component's prop type.
+
+**`Cannot find module '@adaptivekit/sdk'`**
+The package was not installed. Run `npm install @adaptivekit/sdk` and confirm it appears in `package.json`. If installed but still missing, restart the TypeScript server.
+
+### Install errors
+
+**`npm ERR! 404 Not Found - GET ... @adaptivekit/cli`**
+npm registry propagation lag right after publish. Usually resolves within 5 minutes. If it persists, check the package status at https://www.npmjs.com/package/@adaptivekit/cli.
+
+**`npm ERR! peer dep missing`**
+None of the AdaptiveKit packages declare peer dependencies. This error comes from another package in my project. Read the full error message to see which one.
+
+### Behavior issues
+
+**IDs change every time I run `generate`**
+The hash includes the enclosing component name. If a tool (Prettier, ESLint, a refactoring rename) renamed components between runs, the IDs change. Solution: revert the rename or accept the new IDs and treat them as new blocks.
+
+**Some elements get IDs and others do not**
+The CLI applies depth filtering. Elements at depth less than `minDepth` or greater than `maxDepth` are skipped. Lower `minDepth` to 0 to inspect everything, then tune.
+
+**Ranking does not match my expectation**
+The decay-weighted score favors recent engagement. A block I clicked last week scores lower than a block I viewed yesterday. To verify, dump the raw scores: `engine.getLayout(userId).scores` shows the actual numbers per block.
+
 ## Compatibility
 
 | Layer | Requirement |
@@ -416,6 +761,164 @@ I store it as-is. The version field lets me migrate the schema later without bre
 ## Privacy
 
 AdaptiveKit collects engagement events (views, clicks, dwells) keyed by the user ID I pass in. It does not collect personally identifiable information, IP addresses, user-agent strings, or content. The events route through my server, not Anthropic's, not the maintainer's, not anyone else's. I decide where they land.
+
+## Setting up with an AI assistant
+
+AdaptiveKit is designed to install in under ten minutes by hand. With an AI coding assistant (Claude Code, Cursor, GitHub Copilot Chat, Aider), the setup compresses to a single conversation. The prompts below are self-contained and copy-pasteable.
+
+### Best practices for AI-assisted setup
+
+These rules apply to any AI prompt I run against AdaptiveKit:
+
+1. **Always have the AI read the codebase before suggesting changes.** Tell it which files to read first. AI assistants invent config when they have no context.
+2. **Always run `npx adaptivekit generate --dry-run` before the real run.** The dry-run output is the AI's chance to catch a wrong include glob before any source file is touched.
+3. **Never let the AI invent block IDs.** The CLI generates them deterministically. If the AI writes literal `data-ak-id="ak-something"` strings into source files, undo that.
+4. **Ask the AI to list its assumptions.** Anything it cannot verify from my codebase (storage choice, auth source, framework version) should be called out.
+5. **Commit before regenerating.** A clean working tree makes the diff readable and lets me revert.
+6. **Pin the package versions in the prompt.** AI training data lags. Specifying `@adaptivekit/cli@1.0.1` prevents the AI from suggesting calls based on a different version.
+7. **Show the AI my existing manifest.** If `adaptivekit.manifest.json` exists, the AI must respect every ID in it.
+
+### Prompt 1: Setup questionnaire
+
+Use this when I want a guided setup. The AI walks me through six questions and produces the full integration in one go.
+
+````
+You are helping me set up AdaptiveKit (https://www.npmjs.com/package/@adaptivekit/cli) in this project.
+
+Step 1: Read these files first if they exist. Do not skip this step.
+- package.json
+- tsconfig.json
+- The top-level structure of src/, app/, and components/ (one level deep, no recursion)
+- adaptivekit.config.js
+- adaptivekit.manifest.json
+
+Step 2: Ask me these questions one at a time and wait for my answer before moving on:
+
+1. Which framework am I using? (React, Next.js App Router, Next.js Pages Router, Vite, Remix, plain HTML)
+2. Where do my page-level UI components live? Default guesses: src/components, src/pages, app/.
+3. Are there directories I want excluded from tracking? Default guesses: tests, stories, generated code.
+4. Do I have a list of specific components I want personalized? If yes, give me the list. If no, I want you to decide based on file size, naming convention, and how often each component appears in route files.
+5. What is my user identity source? Examples: Clerk, NextAuth, Supabase Auth, custom JWT, anonymous-only.
+6. Where do I want to store the affinity state? Examples: Redis, Postgres JSONB, Upstash KV, in-memory Map.
+
+Step 3: After I answer all six, do this in order:
+
+1. Show me the proposed adaptivekit.config.js with one-line comments explaining each value.
+2. Show me the proposed AdaptiveKitProvider client component.
+3. Show me the proposed /api/ak/event server route.
+4. Show me the proposed /api/ak/layout server route.
+5. Show me the proposed useAdaptiveLayout React hook.
+6. List every assumption you made that you could not verify from the codebase.
+
+Do not write any files until I confirm. Run npx adaptivekit generate --dry-run first and show me the output before running it for real.
+
+Pin the package versions: @adaptivekit/cli@1.0.1, @adaptivekit/sdk@1.0.0, @adaptivekit/core@1.0.0.
+````
+
+### Prompt 2: Decide for me
+
+Use this when I trust the AI to make opinionated calls and want zero questions.
+
+````
+You are setting up AdaptiveKit in this project. I am not going to answer questions. Read the codebase and decide for me.
+
+Step 1: Read in this order. Do not skip.
+1. package.json. Note: framework, dependencies, scripts.
+2. The directory tree of src/, app/, components/ (one level deep).
+3. Any existing adaptivekit.config.js.
+4. Any existing adaptivekit.manifest.json. Respect every ID in this file. Do not change it.
+5. Pick 3 to 5 representative source files that look like top-level page or feature components. Read them in full to learn my naming conventions, my JSX nesting style, and my prop spreading patterns.
+
+Step 2: Decide and produce these files:
+- adaptivekit.config.js with opinionated defaults based on what you saw.
+- src/lib/adaptivekit-provider.tsx (or my project's equivalent path).
+- app/api/ak/event/route.ts (or pages/api equivalent for Pages Router).
+- app/api/ak/layout/route.ts.
+- src/lib/use-adaptive-layout.ts.
+
+Step 3: Before writing any files, output a plan that lists:
+- The components you decided to include and why.
+- The components you decided to exclude and why.
+- The storage backend you assumed (default to in-memory Map for prototyping with a TODO comment to swap for Redis or Postgres).
+- The auth source you assumed.
+- Any other assumption you could not verify.
+
+Step 4: Run npx adaptivekit generate --dry-run and show me the output.
+
+Step 5: Wait for me to say "go" before writing files or running the real generate.
+
+Pin the package versions: @adaptivekit/cli@1.0.1, @adaptivekit/sdk@1.0.0, @adaptivekit/core@1.0.0.
+````
+
+### Prompt 3: Audit after a refactor
+
+Use this after I rename, move, or restructure components. The AI tells me what changed and whether to re-run the CLI.
+
+````
+You are auditing my AdaptiveKit setup after a refactor.
+
+Step 1: Read these files:
+- adaptivekit.manifest.json
+- adaptivekit.config.js
+- The current state of every source file referenced in the manifest (filePath field on each entry).
+
+Step 2: For each entry in the manifest, check:
+- Does the file still exist at the recorded filePath?
+- Does the component named componentName still exist in that file?
+- Does the element at the recorded line and column still match the recorded elementType?
+
+Step 3: Output a report with three sections:
+
+A. Stable IDs. Components that did not move and will keep their IDs.
+B. Invalidated IDs. Components that were renamed or moved. The next generate will create new IDs for them. The old IDs become orphans in the affinity state.
+C. Orphan affinity state. IDs in the manifest that no longer correspond to any element.
+
+Step 4: Recommend one of these actions and explain why:
+- Re-run npx adaptivekit generate now (small refactor, safe to re-tag).
+- Delete the orphan entries from the manifest first, then re-run (medium refactor).
+- Reset the affinity state for affected users (large refactor, history is lost but the model is clean).
+
+Do not modify any files. This is a read-only audit.
+````
+
+### Prompt 4: Diagnose an integration issue
+
+Use this when something is not working and I do not know why.
+
+````
+You are debugging my AdaptiveKit integration. The symptom is: [describe the symptom in one sentence, e.g., "events fire in the browser but the ranking never updates"].
+
+Step 1: Read these files:
+- The file where I call init() from @adaptivekit/sdk.
+- The /api/ak/event route handler.
+- The /api/ak/layout route handler.
+- adaptivekit.manifest.json (top of the file only).
+- package.json (versions of @adaptivekit/* packages).
+
+Step 2: Check the README troubleshooting section at https://github.com/omrajguru05/adaptivekit#troubleshooting for the symptom I described.
+
+Step 3: Walk through the data flow in order:
+1. Are data-ak-id attributes present in the rendered DOM? Suggest a DevTools snippet I can run to verify.
+2. Does init() receive a valid userId?
+3. Does onEvent fire? Suggest a console.log to add temporarily.
+4. Does the event POST reach the server route?
+5. Does the engine import the prior state before ingesting?
+6. Does the engine export and persist after ingesting?
+7. Does the layout route import state on every request?
+
+Step 4: For each step, mark it Verified, Likely, or Unknown based on what the code shows. List the next debugging action.
+
+Do not modify any files. Output diagnostic suggestions only.
+````
+
+### Picking the right prompt
+
+| Situation | Prompt to use |
+|---|---|
+| First-time setup, I want a guided walkthrough | Prompt 1 |
+| First-time setup, I trust the AI to decide | Prompt 2 |
+| I refactored components and want to know what to re-run | Prompt 3 |
+| Something is broken and I cannot figure out what | Prompt 4 |
 
 ## Roadmap
 
