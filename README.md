@@ -1,8 +1,8 @@
 # AdaptiveKit
 
-I built AdaptiveKit because every frontend ships the same UI to every user, and the tools that fix that need a hosted backend, a dashboard, and a week of integration work. AdaptiveKit installs as three npm packages and gives any React, Next.js, Vue, or vanilla web app behavioral UI personalization in under ten minutes. There is no server I run. There is no data I store. The stack stays yours.
+AdaptiveKit is an open-source toolkit that gives any React, Next.js, Vue, or vanilla web app behavioral UI personalization in under ten minutes. Install three npm packages, run one CLI command, and the UI starts adapting to each user's behavior. No hosted backend, no data leaving your stack.
 
-The core idea: most personalization tools operate at the content layer (which data to show). AdaptiveKit operates at the component layer (which UI blocks to surface and in what order). It tracks how each user engages with each block, then ranks the blocks per user. I take the ranking and reorder the UI however I want.
+Most personalization tools operate at the content layer (which data to show). AdaptiveKit operates at the component layer (which UI blocks to surface and in what order). It tracks how each user engages with each block, then ranks the blocks per user. Apply the ranking with CSS order, conditional rendering, slot-based layouts, or whatever the project's design system allows.
 
 ## Status
 
@@ -14,19 +14,19 @@ Version 1.0. The three packages build, the test suite passes, and the SDK ships 
 | [`@adaptivekit/sdk`](https://www.npmjs.com/package/@adaptivekit/sdk) | 1.0.0 | 3.04 KB min | Browser tracker that emits engagement events |
 | [`@adaptivekit/core`](https://www.npmjs.com/package/@adaptivekit/core) | 1.0.0 | 4.29 KB min | Scoring engine that ranks blocks per user |
 
-## What it does, in one paragraph
+## What it does
 
-I run the CLI once. It walks every `.jsx` and `.tsx` file in my project, finds container elements like `div`, `section`, `article`, and `aside`, and writes a stable `data-ak-id` attribute onto each one. It also writes a manifest file that maps every ID to the component it came from. The browser SDK attaches an `IntersectionObserver` to every tagged element and a delegated click listener to the document, then emits events when a user views, clicks, or dwells on a block. The core engine reads those events and ranks the blocks per user using a decay-weighted affinity score. I take the ranking and reorder my UI.
+Run the CLI once. It walks every `.jsx` and `.tsx` file in the project, finds container elements like `div`, `section`, `article`, and `aside`, and writes a stable `data-ak-id` attribute onto each one. It also writes a manifest file that maps every ID back to its source component. The browser SDK attaches an `IntersectionObserver` to every tagged element and a delegated click listener to the document, then emits events when a user views, clicks, or dwells on a block. The core engine reads those events and ranks the blocks per user using a decay-weighted affinity score. The ranking comes back as a plain array of block IDs, ready to apply however the layout system allows.
 
-## Why I built this
+## Why it exists
 
-I worked on a B2B SaaS product where customers asked for "personalized dashboards" every quarter. The asks were not data personalization. They wanted the layout itself to adapt: the analytics widget the user opens daily should sit at the top, the rarely-touched settings panel should sink. Every existing tool I evaluated wanted a hosted backend, a tracking script, an analytics dashboard, and a paid tier. None of them shipped as code I could own.
+B2B SaaS products ship a fixed UI layout. Every user sees the same blocks in the same order. Enterprise customers want layouts that adapt: the analytics widget opened daily belongs at the top, the rarely-touched settings panel belongs at the bottom. Existing personalization tools demand a hosted backend, a tracking script, an analytics dashboard, and a paid tier.
 
-AdaptiveKit ships as code I own. The events route through my server. The state lives in my database. The ranking runs in my process. There is no AdaptiveKit cloud.
+AdaptiveKit ships as code you own. Events route through your server. State lives in your database. The ranking runs in your process. There is no AdaptiveKit cloud.
 
 ## Quickstart
 
-I'll walk through a Next.js App Router setup. The same flow works for Vite, Remix, plain Create React App, or any other JSX project.
+This walkthrough uses Next.js App Router. The same flow applies to Vite, Remix, plain Create React App, or any other JSX project.
 
 ### Step 1: Install the packages
 
@@ -35,7 +35,7 @@ npm install @adaptivekit/sdk @adaptivekit/core
 npm install -D @adaptivekit/cli
 ```
 
-`@adaptivekit/sdk` runs in the browser. `@adaptivekit/core` runs on my server. `@adaptivekit/cli` runs once at setup time and again whenever I add new components.
+`@adaptivekit/sdk` runs in the browser. `@adaptivekit/core` runs on the server. `@adaptivekit/cli` runs once at setup time and again whenever new components ship.
 
 ### Step 2: Inject tracking IDs
 
@@ -43,9 +43,9 @@ npm install -D @adaptivekit/cli
 npx adaptivekit generate
 ```
 
-The CLI parses every JSX/TSX file in `src/`, `app/`, and `components/` by default. For each container element it finds, it inserts a `data-ak-id` attribute and records the ID in `adaptivekit.manifest.json` at the project root. The manifest commits to git. Re-running the command picks up new components and leaves the existing IDs untouched.
+The CLI parses every JSX/TSX file in `src/`, `app/`, and `components/` by default. For each container element it finds, it inserts a `data-ak-id` attribute and records the ID in `adaptivekit.manifest.json` at the project root. The manifest commits to git. Re-running the command picks up new components and leaves existing IDs untouched.
 
-What this looks like in my source:
+A typical injection looks like this:
 
 ```tsx
 // Before
@@ -63,7 +63,7 @@ The ID format is `ak-[component-name]-[element-type]-[hash]`. The hash is determ
 
 ### Step 3: Initialize the browser SDK
 
-In my root layout (or `_app.tsx`), I call `init()` with the current user ID and a callback that posts events to my own API:
+In the root layout (or `_app.tsx`), call `init()` with the current user ID and a callback that posts events to your own API:
 
 ```tsx
 'use client'
@@ -91,7 +91,7 @@ The SDK is server-render safe. It only attaches observers after `DOMContentLoade
 
 ### Step 4: Ingest events on the server
 
-I create a route that takes the event, loads the user's stored affinity state, feeds the event into the engine, and writes the new state back. Any key-value store works: Redis, Postgres JSONB, DynamoDB, Supabase, even a `Map` in memory for prototyping.
+Create a route that takes the event, loads the user's stored affinity state, feeds the event into the engine, and writes the new state back. Any key-value store works: Redis, Postgres JSONB, DynamoDB, Supabase, even an in-memory `Map` for prototyping.
 
 ```ts
 // app/api/ak/event/route.ts
@@ -110,11 +110,11 @@ export async function POST(req: Request) {
 }
 ```
 
-`AffinityState` is a plain JSON object. It contains the running decayed score and the raw event counts per block per user. I store it as-is. The engine reconstructs from it on every request.
+`AffinityState` is a plain JSON object. It contains the running decayed score and the raw event counts per block per user. Store it as-is. The engine reconstructs from it on every request.
 
 ### Step 5: Fetch the ranked layout
 
-I expose a second route that returns the user's ranking:
+Expose a second route that returns the user's ranking:
 
 ```ts
 // app/api/ak/layout/route.ts
@@ -153,7 +153,7 @@ The layout response looks like:
 
 ### Step 6: Apply the ranking
 
-This is the only opinionated step, and AdaptiveKit takes no opinion on it. I pick whatever fits my layout system. CSS `order` works on flex containers without any conditional rendering:
+This is the only opinionated step, and AdaptiveKit takes no opinion on it. Pick whatever fits the layout system. CSS `order` works on flex containers without any conditional rendering:
 
 ```tsx
 const { rankedBlockIds } = useAdaptiveLayout(userId)
@@ -173,15 +173,15 @@ return (
 )
 ```
 
-For slot-based layouts, I sort the children before rendering. For grid layouts, I use `grid-row`. The ranking is an array of strings, and I do whatever the parent design system allows.
+For slot-based layouts, sort the children before rendering. For grid layouts, use `grid-row`. The ranking is an array of strings, used however the parent design system allows.
 
 ## Recipes
 
-Common patterns I needed when wiring AdaptiveKit into a real app. Each recipe is independent and copy-pasteable.
+Common patterns when wiring AdaptiveKit into a real app. Each recipe is independent and copy-pasteable.
 
 ### A `useAdaptiveLayout` React hook
 
-The roadmap promises this as a first-class export. Until I ship it, here is the implementation I use today:
+The roadmap promises this as a first-class export. Until it ships, here is a working implementation:
 
 ```tsx
 // src/lib/use-adaptive-layout.ts
@@ -225,11 +225,11 @@ export function useAdaptiveLayout(userId: string | null, ttlMs = 30_000) {
 }
 ```
 
-The hook caches the layout in memory for 30 seconds, so navigating between pages does not refetch. Adjust the TTL based on how aggressive I want the personalization to feel.
+The hook caches the layout in memory for 30 seconds, so navigating between pages does not refetch. Tune the TTL based on how aggressive the personalization should feel.
 
 ### Cold start (a brand-new user with zero events)
 
-The engine returns an empty `rankedBlockIds` array for users it has never seen. I treat that as a signal to fall back to a default order:
+The engine returns an empty `rankedBlockIds` array for users it has never seen. Treat that as a signal to fall back to a default order:
 
 ```ts
 const layout = engine.getLayout(userId)
@@ -238,11 +238,11 @@ const ranking = layout.rankedBlockIds.length > 0
   : DEFAULT_RANKING_FOR_NEW_USERS
 ```
 
-`DEFAULT_RANKING_FOR_NEW_USERS` is whatever order I would have shipped without AdaptiveKit. The personalization layer activates the moment a user starts engaging.
+`DEFAULT_RANKING_FOR_NEW_USERS` is whatever order the app would have shipped without AdaptiveKit. The personalization layer activates the moment a user starts engaging.
 
 ### Custom React components (Card, Panel, FeatureBlock)
 
-By default, the CLI skips PascalCase components because changing their props can break custom prop validation. To opt them in, I add them to `componentTags`:
+By default, the CLI skips PascalCase components because changing their props can break custom prop validation. Opt them in by adding to `componentTags`:
 
 ```js
 // adaptivekit.config.js
@@ -261,7 +261,7 @@ function Card({ children, ...rest }: CardProps) {
 
 ### Excluding a single element from tracking
 
-I delete the `data-ak-id` attribute from any element I want to opt out, and I add a sentinel attribute the CLI recognizes so re-runs do not re-inject:
+Delete the `data-ak-id` attribute from any element you want to opt out, and add a sentinel attribute the CLI recognizes so re-runs do not re-inject:
 
 ```tsx
 // This block stays untracked across re-runs
@@ -270,11 +270,11 @@ I delete the `data-ak-id` attribute from any element I want to opt out, and I ad
 </section>
 ```
 
-I commit the `data-ak-skip` attribute to source. Any future `generate` skips elements that have it.
+Commit the `data-ak-skip` attribute to source. Any future `generate` skips elements that have it.
 
 ### Anonymous users
 
-For users without an account, I generate a stable anonymous ID once and store it in `localStorage`:
+For users without an account, generate a stable anonymous ID once and store it in `localStorage`:
 
 ```ts
 function getAnonymousId() {
@@ -293,7 +293,7 @@ This works across browser sessions on the same device. It does not survive a `lo
 
 ### Batching events on the wire
 
-The default `onEvent` callback fires once per event. On busy pages, I batch events in memory and flush every 5 seconds or every 20 events, whichever comes first:
+The default `onEvent` callback fires once per event. On busy pages, batch events in memory and flush every 5 seconds or every 20 events, whichever comes first:
 
 ```ts
 import type { AdaptiveKitEvent } from '@adaptivekit/sdk'
@@ -369,11 +369,11 @@ engine.reset(userId)
 await myStore.delete(`ak:${userId}`)
 ```
 
-I wire that into the same code path that deletes the user's account. The events themselves are write-only and are not stored individually, so there is no event log to purge.
+Wire that into the same code path that deletes the user's account. The events themselves are write-only and are not stored individually, so there is no event log to purge.
 
 ### Edge-caching the layout response
 
-The layout endpoint is read-mostly. I cache it in the browser with a short TTL:
+The layout endpoint is read-mostly. Cache it in the browser with a short TTL:
 
 ```ts
 return new Response(JSON.stringify(layout), {
@@ -402,7 +402,7 @@ Re-run the CLI in three situations:
 | `adaptivekit.config.js` | Yes | Reproducible setup for every contributor. |
 | Source files with injected `data-ak-id` | Yes | The IDs are part of the rendered DOM. |
 | `node_modules/` | No | Standard `.gitignore` rule. |
-| Affinity state (per-user JSON) | No | Lives in my database, not in the repo. |
+| Affinity state (per-user JSON) | No | Lives in your database, not in the repo. |
 
 ## How the three packages fit together
 
@@ -426,21 +426,21 @@ Re-run the CLI in three situations:
              │   POST /api/ak/event
              ▼
 ┌──────────────────────────┐
-│  @adaptivekit/core       │  Runtime on my server. Ingests events, runs the
-│  Decay-weighted scoring  │  scoring algorithm, returns a ranked layout.
+│  @adaptivekit/core       │  Runtime on your server. Ingests events, runs
+│  Decay-weighted scoring  │  the scoring algorithm, returns a ranked layout.
 └──────────────────────────┘
              │   { rankedBlockIds, scores }
              ▼
    ┌─────────────────────┐
-   │  Your UI            │  I apply the ranking with CSS order or render order.
+   │  Your UI            │  Apply the ranking with CSS order or render order.
    └─────────────────────┘
 ```
 
-The arrows are the only contract. Every interface is a typed function call, and there is no protocol I invented.
+The arrows are the only contract. Every interface is a typed function call.
 
 ## CLI reference
 
-`@adaptivekit/cli` is the codemod. A codemod is a script that rewrites source code by parsing it into an abstract syntax tree, modifying the tree, and writing the result back. An abstract syntax tree (AST) is the structured representation of source code that compilers and tools work with internally. The CLI uses `@babel/parser` to parse JSX and TypeScript. It does not re-print the source. It computes byte offsets from the parsed tree and splices attribute strings into the original file, so my formatting, comments, and quote style stay exactly as I wrote them.
+`@adaptivekit/cli` is the codemod. A codemod is a script that rewrites source code by parsing it into an abstract syntax tree, modifying the tree, and writing the result back. An abstract syntax tree (AST) is the structured representation of source code that compilers and tools work with internally. The CLI uses `@babel/parser` to parse JSX and TypeScript. It does not re-print the source. It computes byte offsets from the parsed tree and splices attribute strings into the original file, preserving formatting, comments, and quote style.
 
 ### Commands
 
@@ -469,25 +469,25 @@ module.exports = {
   include: ['src/**/*.{jsx,tsx}', 'app/**/*.{jsx,tsx}'],
   exclude: ['**/*.test.tsx', '**/*.stories.tsx'],
   elementTypes: ['div', 'section', 'article', 'aside', 'main', 'header', 'footer', 'nav'],
-  componentTags: [],         // PascalCase components I want tracked too
-  attribute: 'data-ak-id',   // The attribute name (rarely changed)
+  componentTags: [],         // PascalCase components opted in
+  attribute: 'data-ak-id',   // Attribute name (rarely changed)
   minDepth: 1,               // Skip top-level wrappers
   maxDepth: 8,               // Skip deeply nested layout primitives
   manifestPath: 'adaptivekit.manifest.json',
 }
 ```
 
-`elementTypes` controls which lowercase HTML tags get IDs. `componentTags` opts in custom React components by name. I use it when my design system wraps everything in a `<Card>` instead of a `<section>`.
+`elementTypes` controls which lowercase HTML tags get IDs. `componentTags` opts in custom React components by name. Use it when the design system wraps everything in a `<Card>` instead of a `<section>`.
 
-`minDepth` and `maxDepth` are JSX nesting depths. The outermost JSX in a component returns at depth 0. Setting `minDepth: 1` skips the wrapper element so I avoid tracking the entire page as a single block.
+`minDepth` and `maxDepth` are JSX nesting depths. The outermost JSX in a component returns at depth 0. Setting `minDepth: 1` skips the wrapper element to avoid tracking the entire page as a single block.
 
 ### Stable IDs
 
-The hash in each ID is computed from the file path, the enclosing component name, the element type, and the occurrence index of that element type within that component. It does not depend on line numbers or surrounding code. Adding a new sibling at the bottom of a component does not invalidate the existing IDs. Renaming a component does invalidate them, which is the right tradeoff: a renamed component is a new component.
+The hash in each ID is computed from the file path, the enclosing component name, the element type, and the occurrence index of that element type within that component. It does not depend on line numbers or surrounding code. Adding a new sibling at the bottom of a component does not invalidate existing IDs. Renaming a component does invalidate them, which is the right tradeoff: a renamed component is a new component.
 
 ## SDK reference
 
-`@adaptivekit/sdk` is the runtime tracker. It uses `IntersectionObserver`, a browser API that fires a callback when an element crosses a visibility threshold. The SDK uses one shared observer for every tagged element and one delegated `click` listener on the document, so the cost stays flat as I add more blocks.
+`@adaptivekit/sdk` is the runtime tracker. It uses `IntersectionObserver`, a browser API that fires a callback when an element crosses a visibility threshold. The SDK uses one shared observer for every tagged element and one delegated `click` listener on the document, so the cost stays flat as more blocks get added.
 
 ### `init(options)`
 
@@ -504,7 +504,7 @@ type AdaptiveKitOptions = {
 }
 ```
 
-I pass the current user ID and an event handler. Everything else has a default I chose to match the reference spec.
+Pass the current user ID and an event handler. Everything else has a default chosen to match the reference spec.
 
 ### Events
 
@@ -525,7 +525,7 @@ type AdaptiveKitEvent = {
 | `click` | The user clicks anywhere inside the block |
 | `dwell` | The block leaves the viewport after the user looked at it for at least 2 seconds |
 
-The SDK uses a `MutationObserver` to track elements added to the DOM after init, so single-page-app route changes work without me wiring up router hooks. A `MutationObserver` is a browser API that notifies code when the DOM tree changes.
+The SDK uses a `MutationObserver` to track elements added to the DOM after init, so single-page-app route changes work without router hooks. A `MutationObserver` is a browser API that notifies code when the DOM tree changes.
 
 ### Other API
 
@@ -539,7 +539,7 @@ resumeTracking()         // Resume emission
 
 ### Bundle size
 
-The minified ESM build is 3.04 KB. I aimed for under 8 KB and beat it. The SDK has zero runtime dependencies. `IntersectionObserver`, `MutationObserver`, and `fetch` are all native browser APIs.
+The minified ESM build is 3.04 KB, well under the 8 KB target. The SDK has zero runtime dependencies. `IntersectionObserver`, `MutationObserver`, and `fetch` are all native browser APIs.
 
 ## Core reference
 
@@ -594,7 +594,7 @@ Dwell weight saturates: a 30-second dwell is worth the full dwell weight. A 5-se
 
 ### Storage
 
-The engine is stateless between calls. I bring my own storage. The pattern:
+The engine is stateless between calls. Bring your own storage. The pattern:
 
 ```ts
 // Read on every server request
@@ -628,7 +628,7 @@ The exported state is a plain JSON object roughly:
 }
 ```
 
-I store it as-is. The version field lets me migrate the schema later without breaking existing snapshots.
+Store it as-is. The version field allows schema migration without breaking existing snapshots.
 
 ## Troubleshooting
 
@@ -646,19 +646,19 @@ exclude: ['**/*.vue', '**/*.svelte', '**/*.mdx']
 **Manifest is empty after `generate`**
 The CLI scanned files but found nothing to inject. Three usual causes:
 
-1. `minDepth` is higher than the deepest container in my components. Lower it to 0 and re-run.
-2. None of my container elements match `elementTypes`. Check what tags my components actually use and add them to the list.
-3. My components use custom PascalCase wrappers (`<Stack>`, `<Box>`). Add them to `componentTags`.
+1. `minDepth` is higher than the deepest container in the components. Lower it to 0 and re-run.
+2. None of the container elements match `elementTypes`. Check what tags the components actually use and add them to the list.
+3. The components use custom PascalCase wrappers (`<Stack>`, `<Box>`). Add them to `componentTags`.
 
 **`No files matched`**
-The `include` glob does not match my project structure. Run with `--verbose` to see what the CLI scanned. A common adjustment for projects with a non-standard layout:
+The `include` glob does not match the project structure. Run with `--verbose` to see what the CLI scanned. A common adjustment for non-standard layouts:
 
 ```js
 include: ['packages/web/src/**/*.{jsx,tsx}']
 ```
 
 **Source files reformat themselves after `generate`**
-The CLI does byte-level inserts and does not touch formatting. If files reformat, my editor or pre-commit hook (Prettier, ESLint) is the cause. Run the CLI, then run my formatter, and commit both diffs together.
+The CLI does byte-level inserts and does not touch formatting. If files reformat, an editor or pre-commit hook (Prettier, ESLint) is the cause. Run the CLI, then run the formatter, and commit both diffs together.
 
 ### SDK errors
 
@@ -671,19 +671,19 @@ if (typeof window !== 'undefined') {
 }
 ```
 
-**No events arrive at my server**
+**No events arrive at the server**
 Walk through the checklist in order:
 
 1. Open DevTools and confirm the elements have `data-ak-id` attributes.
 2. Set `debug: true` in `init()` and check the console for SDK errors.
 3. Confirm `onEvent` posts to a real route. Test the route directly with `curl`.
-4. Check for content-blockers. uBlock Origin and similar extensions block requests to paths containing `track`, `event`, or `analytics`. Rename the route to `/api/ak/ingest` if I see this.
+4. Check for content-blockers. uBlock Origin and similar extensions block requests to paths containing `track`, `event`, or `analytics`. Rename the route to `/api/ak/ingest` if this is the cause.
 
 **Events fire but the layout never changes**
-The events arrive but the engine state is not persisting. Check that `engine.exportState(userId)` writes to my store and `engine.importState(userId, ...)` reads on every request. A common bug is creating a new `AdaptiveEngine` per request without importing the prior state, which throws away every event.
+The events arrive but the engine state is not persisting. Check that `engine.exportState(userId)` writes to storage and `engine.importState(userId, ...)` reads on every request. A common bug is creating a new `AdaptiveEngine` per request without importing the prior state, which throws away every event.
 
 **The same view event fires repeatedly**
-This is correct behavior. Each time a block crosses the visibility threshold, the SDK emits a view event. If I want one view per page session, dedupe inside `onEvent`:
+This is correct behavior. Each time a block crosses the visibility threshold, the SDK emits a view event. To get one view per page session, dedupe inside `onEvent`:
 
 ```ts
 const seen = new Set<string>()
@@ -711,10 +711,10 @@ if (stored) engine.importState(userId, stored)
 If `stored` is `null`, the user genuinely has no events yet. See the cold start recipe.
 
 **`Unsupported AffinityState version`**
-I imported a snapshot the engine does not recognize. The engine writes `version: 1` and only accepts `version: 1`. If I see this error, my storage holds a corrupt or hand-edited snapshot.
+The imported snapshot is in a format the engine does not recognize. The engine writes `version: 1` and only accepts `version: 1`. This error means the storage holds a corrupt or hand-edited snapshot.
 
 **Scores grow unboundedly**
-The decay rate `lambda` is too low. Default 0.05 keeps scores bounded for typical usage. If I lowered it, raise it back. Verify by querying `engine.exportState(userId)` and looking at the largest `score` value.
+The decay rate `lambda` is too low. The default of 0.05 keeps scores bounded for typical usage. If lowered, raise it back. Verify by querying `engine.exportState(userId)` and looking at the largest `score` value.
 
 ### TypeScript errors
 
@@ -733,18 +733,18 @@ The package was not installed. Run `npm install @adaptivekit/sdk` and confirm it
 npm registry propagation lag right after publish. Usually resolves within 5 minutes. If it persists, check the package status at https://www.npmjs.com/package/@adaptivekit/cli.
 
 **`npm ERR! peer dep missing`**
-None of the AdaptiveKit packages declare peer dependencies. This error comes from another package in my project. Read the full error message to see which one.
+None of the AdaptiveKit packages declare peer dependencies. This error comes from another package in the project. Read the full error message to see which one.
 
 ### Behavior issues
 
-**IDs change every time I run `generate`**
+**IDs change every time `generate` runs**
 The hash includes the enclosing component name. If a tool (Prettier, ESLint, a refactoring rename) renamed components between runs, the IDs change. Solution: revert the rename or accept the new IDs and treat them as new blocks.
 
 **Some elements get IDs and others do not**
 The CLI applies depth filtering. Elements at depth less than `minDepth` or greater than `maxDepth` are skipped. Lower `minDepth` to 0 to inspect everything, then tune.
 
-**Ranking does not match my expectation**
-The decay-weighted score favors recent engagement. A block I clicked last week scores lower than a block I viewed yesterday. To verify, dump the raw scores: `engine.getLayout(userId).scores` shows the actual numbers per block.
+**Ranking does not match expectation**
+The decay-weighted score favors recent engagement. A block clicked last week scores lower than a block viewed yesterday. To verify, dump the raw scores: `engine.getLayout(userId).scores` shows the actual numbers per block.
 
 ## Compatibility
 
@@ -760,27 +760,29 @@ The decay-weighted score favors recent engagement. A block I clicked last week s
 
 ## Privacy
 
-AdaptiveKit collects engagement events (views, clicks, dwells) keyed by the user ID I pass in. It does not collect personally identifiable information, IP addresses, user-agent strings, or content. The events route through my server, not Anthropic's, not the maintainer's, not anyone else's. I decide where they land.
+AdaptiveKit collects engagement events (views, clicks, dwells) keyed by the user ID passed into `init()`. It does not collect personally identifiable information, IP addresses, user-agent strings, or content. Events route through your own server. There is no AdaptiveKit cloud and no third-party recipient.
 
 ## Setting up with an AI assistant
 
-AdaptiveKit is designed to install in under ten minutes by hand. With an AI coding assistant (Claude Code, Cursor, GitHub Copilot Chat, Aider), the setup compresses to a single conversation. The prompts below are self-contained and copy-pasteable.
+AdaptiveKit installs in under ten minutes by hand. With an AI coding assistant (Claude Code, Cursor, GitHub Copilot Chat, Aider), the setup compresses to a single conversation. The prompts below are self-contained and copy-pasteable.
+
+A reusable skill for Claude Code lives at `.claude/skills/adaptivekit/`. It teaches a model the full operational playbook (modes, config, recipes, troubleshooting) in one load. See `.claude/skills/adaptivekit/INSTALL.md` for global installation.
 
 ### Best practices for AI-assisted setup
 
-These rules apply to any AI prompt I run against AdaptiveKit:
+These rules apply to any AI prompt run against AdaptiveKit:
 
-1. **Always have the AI read the codebase before suggesting changes.** Tell it which files to read first. AI assistants invent config when they have no context.
-2. **Always run `npx adaptivekit generate --dry-run` before the real run.** The dry-run output is the AI's chance to catch a wrong include glob before any source file is touched.
+1. **Have the AI read the codebase before suggesting changes.** Tell it which files to read first. AI assistants invent config when they have no context.
+2. **Run `npx adaptivekit generate --dry-run` before the real run.** The dry-run output is the AI's chance to catch a wrong include glob before any source file is touched.
 3. **Never let the AI invent block IDs.** The CLI generates them deterministically. If the AI writes literal `data-ak-id="ak-something"` strings into source files, undo that.
-4. **Ask the AI to list its assumptions.** Anything it cannot verify from my codebase (storage choice, auth source, framework version) should be called out.
-5. **Commit before regenerating.** A clean working tree makes the diff readable and lets me revert.
+4. **Ask the AI to list its assumptions.** Anything it cannot verify from the codebase (storage choice, auth source, framework version) should be called out.
+5. **Commit before regenerating.** A clean working tree makes the diff readable and allows easy revert.
 6. **Pin the package versions in the prompt.** AI training data lags. Specifying `@adaptivekit/cli@1.0.1` prevents the AI from suggesting calls based on a different version.
-7. **Show the AI my existing manifest.** If `adaptivekit.manifest.json` exists, the AI must respect every ID in it.
+7. **Show the AI the existing manifest.** If `adaptivekit.manifest.json` exists, the AI must respect every ID in it.
 
 ### Prompt 1: Setup questionnaire
 
-Use this when I want a guided setup. The AI walks me through six questions and produces the full integration in one go.
+Use this for a guided setup. The AI walks the user through six questions and produces the full integration in one go.
 
 ````
 You are helping me set up AdaptiveKit (https://www.npmjs.com/package/@adaptivekit/cli) in this project.
@@ -817,7 +819,7 @@ Pin the package versions: @adaptivekit/cli@1.0.1, @adaptivekit/sdk@1.0.0, @adapt
 
 ### Prompt 2: Decide for me
 
-Use this when I trust the AI to make opinionated calls and want zero questions.
+Use this when the AI should make opinionated calls and ask zero questions.
 
 ````
 You are setting up AdaptiveKit in this project. I am not going to answer questions. Read the codebase and decide for me.
@@ -852,7 +854,7 @@ Pin the package versions: @adaptivekit/cli@1.0.1, @adaptivekit/sdk@1.0.0, @adapt
 
 ### Prompt 3: Audit after a refactor
 
-Use this after I rename, move, or restructure components. The AI tells me what changed and whether to re-run the CLI.
+Use this after a rename, move, or restructure of components. The AI reports what changed and whether to re-run the CLI.
 
 ````
 You are auditing my AdaptiveKit setup after a refactor.
@@ -883,7 +885,7 @@ Do not modify any files. This is a read-only audit.
 
 ### Prompt 4: Diagnose an integration issue
 
-Use this when something is not working and I do not know why.
+Use this when something is not working and the cause is unclear.
 
 ````
 You are debugging my AdaptiveKit integration. The symptom is: [describe the symptom in one sentence, e.g., "events fire in the browser but the ranking never updates"].
@@ -915,20 +917,20 @@ Do not modify any files. Output diagnostic suggestions only.
 
 | Situation | Prompt to use |
 |---|---|
-| First-time setup, I want a guided walkthrough | Prompt 1 |
-| First-time setup, I trust the AI to decide | Prompt 2 |
-| I refactored components and want to know what to re-run | Prompt 3 |
-| Something is broken and I cannot figure out what | Prompt 4 |
+| First-time setup, guided walkthrough | Prompt 1 |
+| First-time setup, AI decides | Prompt 2 |
+| Refactor happened, want to know what to re-run | Prompt 3 |
+| Something is broken and the cause is unclear | Prompt 4 |
 
 ## Roadmap
 
-Items I want to ship next:
+Items planned for future releases:
 
-- A `useAdaptiveLayout()` React hook so the layout fetch is one line in a component.
+- A `useAdaptiveLayout()` React hook as a first-class export.
 - A Vue composable with the same shape.
 - Cohort scoring: a ranking shared across user segments to bootstrap new users.
 - Cold start handling: returning a sensible default ranking when a user has zero events.
-- A watch mode for the CLI so new components get IDs the moment I save the file.
+- A watch mode for the CLI so new components get IDs the moment a file is saved.
 - An OpenTelemetry adapter so the SDK can emit events through existing observability tooling.
 
 ## Local development
