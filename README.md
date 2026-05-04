@@ -1,5 +1,7 @@
 # AdaptiveKit
 
+<p align="center"><img src="./adaptivekit.png" alt="An abstract background with fluid, wavy gradients in shades of lime green, vibrant teal, and soft yellow. The white sans-serif text 'AdaptiveKit' is centered in the middle of the frame."></p>
+
 AdaptiveKit is an open-source toolkit that gives any React, Next.js, Vue, or vanilla web app behavioral UI personalization in under ten minutes. Install three npm packages, run one CLI command, and the UI starts adapting to each user's behavior. No hosted backend, no data leaving your stack.
 
 Most personalization tools operate at the content layer (which data to show). AdaptiveKit operates at the component layer (which UI blocks to surface and in what order). It tracks how each user engages with each block, then ranks the blocks per user. Apply the ranking with CSS order, conditional rendering, slot-based layouts, or whatever the project's design system allows.
